@@ -91,9 +91,12 @@ class NetworkApplication:
 class ICMPPing(NetworkApplication):
 
     def receiveOnePing(self, icmpSocket, destinationAddress, ID, timeout):
-        icmpSocket.connect((destinationAddress, 8000))
-        recv_packet, addr = icmpSocket.recvfrom(1024)
+        recv_packet, addr = icmpSocket.recvfrom(2048)
+        recTime = time.time()
         # 2. Once received, record time of receipt, otherwise, handle a timeout
+        if not recv_packet:
+            print("Timeout, no packet received.")
+            return
         # 3. Compare the time of receipt to time of sending, producing the total network delay
         # 4. Unpack the packet header for useful information, including the ID
         # 5. Check that the ID matches between the request and reply
@@ -102,25 +105,30 @@ class ICMPPing(NetworkApplication):
 
     def sendOnePing(self, icmpSocket, destinationAddress, ID):
         # 1. Build ICMP header
-        head = struct.pack('@ixxxxixxxxdxxxxxxxxi', 8, 0, 0, ID)
+        self.own_id = os.getpid() & 0xFFFF
+        data = struct.pack('>2b3H', 8, 0, 0, self.own_id, ID)
         # 2. Checksum ICMP packet using given function
-        csum = self.checksum(head) 
+        csum = self.checksum(data) 
         # 3. Insert checksum into packet
-        head = struct.pack('@ixxxxixxxxdxxxxxxxxi', 8, 0, csum, ID)
+        head = struct.pack('>2b3H', 8, 0, csum, self.own_id, ID)
+        print(head)
+        print(struct.unpack('>2b3H', head))
         port = 8000
         # 4. Send packet using socket
         icmpSocket.connect((destinationAddress, port))
         icmpSocket.send(head)
         # 5. Record time of sending
+        t = time.time()
+        return t
         pass
 
-    def doOnePing(self, destinationAddress, timeout):
+    def doOnePing(self, destinationAddress, timeout, number):
         # 1. Create ICMP socket
         with socket.socket(socket.AF_INET, socket.SOCK_RAW, 8) as s:
         # 2. Call sendOnePing function
-            self.sendOnePing(s, destinationAddress, 1024)
+            sTime = self.sendOnePing(s, destinationAddress, number)
         # 3. Call receiveOnePing function
-            self.receiveOnePing(s, destinationAddress, 1024, timeout)
+            self.receiveOnePing(s, destinationAddress, number, sTime)
         # 4. Close ICMP socket
             s.close()
         # 5. Return total network delay
@@ -133,7 +141,7 @@ class ICMPPing(NetworkApplication):
         print(addr)
         # 2. Call doOnePing function, approximately every second
         for i in range(0, 10):
-            self.doOnePing(addr, 20)
+            self.doOnePing(addr, 20, i)
             print('Ping...')
         # 3. Print out the returned delay (and other relevant details) using the printOneResult method
             self.printOneResult(addr, 50, 20.0, 150) # Example use of printOneResult - complete as appropriate
